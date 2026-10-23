@@ -1,47 +1,75 @@
+name: Build
+
 on:
   pull_request:
   push:
   workflow_dispatch:
-  
+  workflow_call:
+
+permissions:
+  contents: read
+
 jobs:
-  build:
+  windows:
     runs-on: windows-latest
     strategy:
+      fail-fast: false
       matrix:
-        target_type:
-          - client
-          - server
+        target_type: [client, server]
     steps:
       - uses: actions/checkout@v7
-
       - uses: xmake-io/github-action-setup-xmake@v1
-        # with:
-        #   xmake-version: branch@master
-      
       - uses: actions/cache@v6
         with:
-          path: |
-            ~/AppData/Local/.xmake
-          key: xmake-${{ hashFiles('xmake.lua') }}
-          restore-keys: |
-            xmake-
-
-      - name: Setup LLVM
-        uses: ZhongRuoyu/setup-llvm@v0
+          path: ~/AppData/Local/.xmake
+          key: xmake-windows-${{ matrix.target_type }}-${{ hashFiles('xmake.lua', 'xmake/*.lua') }}
+          restore-keys: xmake-windows-${{ matrix.target_type }}-
+      - uses: ZhongRuoyu/setup-llvm@v0
         with:
           llvm-version: 22
-
-      - run: |
-          xmake repo -u
-
-      - run: |
-          xmake f -a x64 -m release -p windows -v --target_type=${{ matrix.target_type }} -y
-
-      - run: |
-          xmake -v -y
-
+      - run: xmake repo -u
+      - name: Configure Windows
+        run: xmake f -c -y -p windows -a x64 -m release --target_type=${{ matrix.target_type }}
+      - name: Build Windows
+        run: xmake -y
       - uses: actions/upload-artifact@v7
         with:
           name: ${{ github.event.repository.name }}-${{ github.sha }}-${{ matrix.target_type }}-windows-x64
+          if-no-files-found: error
           path: |
             bin/
+            !bin/**/*.pdb
+            !bin/**/*.sym
+            !bin/**/*.ilk
+
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: xmake-io/github-action-setup-xmake@v1
+      - uses: nttld/setup-ndk@v1
+        id: ndk
+        with:
+          ndk-version: r28c
+          local-cache: false
+      - name: Check NDK compiler
+        run: '"$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++" --version'
+        env:
+          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+      - uses: actions/cache@v6
+        with:
+          path: ~/.xmake/packages
+          key: xmake-android-packages-r28c-api28-v3-${{ hashFiles('xmake.lua', 'xmake/*.lua') }}
+      - name: Configure Android
+        run: xmake f -c -y -p android -a arm64-v8a -m release --toolchain=ndk --runtimes=c++_shared --ndk="$ANDROID_NDK_HOME" --ndk_sdkver=28
+        env:
+          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+      - name: Build Android
+        run: xmake -v -y
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ github.event.repository.name }}-${{ github.sha }}-client-android-arm64-v8a
+          if-no-files-found: error
+          path: |
+            bin/android/DoABarrelRoll.so
+            bin/android/DoABarrelRoll.levipack

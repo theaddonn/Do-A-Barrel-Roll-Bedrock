@@ -1,94 +1,57 @@
+name: Release
+
 on:
   release:
-    types:
-      - published
-  
+    types: [published]
+
+permissions:
+  contents: read
+
 jobs:
   build:
-    runs-on: windows-latest
-    strategy:
-      matrix:
-        target_type:
-          - client
-          - server
-    steps:
-      - uses: actions/checkout@v7
+    uses: ./.github/workflows/build.yml
 
-      - uses: xmake-io/github-action-setup-xmake@v1
-        # with:
-        #   xmake-version: branch@master
-
-      - uses: actions/cache@v6
-        with:
-          path: |
-            ~/AppData/Local/.xmake
-          key: xmake-${{ hashFiles('xmake.lua') }}
-          restore-keys: |
-            xmake-
-
-      - name: Setup LLVM
-        uses: ZhongRuoyu/setup-llvm@v0
-        with:
-          llvm-version: 22
-
-      - run: |
-          xmake repo -u
-
-      - run: |
-          xmake f -a x64 -m release -p windows --target_type=${{ matrix.target_type }} -y
-
-      - run: |
-          xmake -w -y
-
-      - uses: actions/upload-artifact@v7
-        with:
-          name: ${{ github.event.repository.name }}-${{ github.sha }}-${{ matrix.target_type }}-windows-x64
-          path: |
-            bin/
-
-  update-release-notes:
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
     permissions:
       contents: write
-    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-
-      - id: extract-release-notes
-        uses: ffurrer2/extract-release-notes@v3
-
-      - uses: softprops/action-gh-release@v3
-        with:
-          body: |
-            ${{ steps.extract-release-notes.outputs.release_notes }}
-
-  upload-to-release:
-    needs:
-      - build
-      - update-release-notes
-    permissions:
-      contents: write
-    strategy:
-      matrix:
-        target_type:
-          - client
-          - server
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
       - uses: actions/download-artifact@v8
         with:
-          name: ${{ github.event.repository.name }}-${{ github.sha }}-${{ matrix.target_type }}-windows-x64
-          path: artifact
-
-      - run: |
-          cp CHANGELOG.md LICENSE README.md artifact/
-
-      - run: |
-          zip -r ../${{ github.event.repository.name }}-${{ matrix.target_type }}-windows-x64.zip *
-        working-directory: artifact
-
+          name: ${{ github.event.repository.name }}-${{ github.sha }}-client-windows-x64
+          path: artifacts/client
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ github.event.repository.name }}-${{ github.sha }}-server-windows-x64
+          path: artifacts/server
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ github.event.repository.name }}-${{ github.sha }}-client-android-arm64-v8a
+          path: artifacts/android
+      - name: Prepare packages
+        run: |
+          mkdir -p dist
+          cp CHANGELOG.md LICENSE NOTICE.md README.md artifacts/client/
+          cp CHANGELOG.md LICENSE NOTICE.md README.md artifacts/server/
+          cp artifacts/android/DoABarrelRoll.so dist/
+          cp artifacts/android/DoABarrelRoll.levipack dist/
+      - name: Package Windows client
+        run: zip -r "$GITHUB_WORKSPACE/dist/$REPOSITORY_NAME-client-windows-x64.zip" .
+        working-directory: artifacts/client
+        env:
+          REPOSITORY_NAME: ${{ github.event.repository.name }}
+      - name: Package Windows server
+        run: zip -r "$GITHUB_WORKSPACE/dist/$REPOSITORY_NAME-server-windows-x64.zip" .
+        working-directory: artifacts/server
+        env:
+          REPOSITORY_NAME: ${{ github.event.repository.name }}
       - uses: softprops/action-gh-release@v3
         with:
+          fail_on_unmatched_files: true
           files: |
-            ${{ github.event.repository.name }}-${{ matrix.target_type }}-windows-x64.zip
+            dist/*-client-windows-x64.zip
+            dist/*-server-windows-x64.zip
+            dist/DoABarrelRoll.so
+            dist/DoABarrelRoll.levipack

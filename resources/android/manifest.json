@@ -1,0 +1,17 @@
+{
+  "type": "preload-native",
+  "name": "Do a Barrel Roll",
+  "author": "Light & theaddon",
+  "description": "Client-side elytra pitch, yaw and roll with banking, momentum steering and configurable touch controls.",
+  "version": "1.0.0",
+  "license": "GPL-3.0-only",
+  "entry": "DoABarrelRoll.so",
+  "icon": "icon.png",
+  "overwrite_files": [
+    "icon.png"
+  ],
+  "minecraft_versions": [
+    "1.26.52*",
+    "26.52*"
+  ]
+}
